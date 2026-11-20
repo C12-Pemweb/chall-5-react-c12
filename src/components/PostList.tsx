@@ -6,9 +6,21 @@ interface Post {
   body: string;
 }
 
-// Backend Modul 4 (MLBB shop) tidak punya /api/posts, jadi pakai API publik ini.
-// Ganti ke http://localhost:3000/api/posts kalau backend dengan route posts sudah nyala.
-const API_URL = "https://jsonplaceholder.typicode.com/posts";
+// Backend Modul 4: jalankan `npm run dev` di pweb-express-c12-2026 (port 3000).
+const API_URL = "http://localhost:3000/api/posts";
+
+// Backend membalas { status, message, data, metadata }, bukan array langsung.
+interface ApiResponse<T> {
+  status: boolean;
+  message: string;
+  data: T;
+}
+
+async function readJson<T>(res: Response): Promise<T> {
+  const payload = (await res.json()) as ApiResponse<T> & { message?: string };
+  if (!res.ok) throw new Error(payload.message ?? `Server error: ${res.status}`);
+  return payload.data;
+}
 
 export default function PostList() {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -24,14 +36,10 @@ export default function PostList() {
 
   useEffect(() => {
     const controller = new AbortController();
-    // jsonplaceholder memfilter lewat title_like, bukan ?search=.
-    const query = search ? `?title_like=${encodeURIComponent(search)}` : "";
+    const query = `?limit=100${search ? `&search=${encodeURIComponent(search)}` : ""}`;
 
     fetch(API_URL + query, { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Server error: ${res.status}`);
-        return res.json() as Promise<Post[]>;
-      })
+      .then((res) => readJson<Post[]>(res))
       .then((data) => {
         if (controller.signal.aborted) return;
         setPosts(data);
@@ -40,7 +48,13 @@ export default function PostList() {
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        setError(err instanceof Error ? err.message : "Gagal mengambil data");
+        setError(
+          err instanceof TypeError
+            ? "Tidak bisa terhubung ke server (http://localhost:3000)"
+            : err instanceof Error
+              ? err.message
+              : "Gagal mengambil data",
+        );
         setLoaded(search);
       });
 
@@ -54,13 +68,11 @@ export default function PostList() {
       const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body, userId: 1 }),
+        body: JSON.stringify({ title, body }),
       });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const created: Post = await res.json();
-      // ponytail: API publik selalu balas id 101, jadi id lokal dibuat unik
-      const id = posts.some((p) => p.id === created.id) ? Date.now() : created.id;
-      setPosts([{ ...created, id }, ...posts]);
+      const created = await readJson<Post>(res);
+      setPosts([created, ...posts]);
+      setError(null);
       setTitle("");
       setBody("");
     } catch (err) {
@@ -71,8 +83,9 @@ export default function PostList() {
   const deletePost = async (id: number) => {
     try {
       const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      await readJson<Post>(res);
       setPosts(posts.filter((p) => p.id !== id));
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal menghapus post");
     }
@@ -94,6 +107,7 @@ export default function PostList() {
 
       {loading && <p>Memuat data...</p>}
       {visibleError && <p style={{ color: "red" }}>Error: {visibleError}</p>}
+      {!loading && !visibleError && posts.length === 0 && <p>Belum ada post.</p>}
 
       <ul>
         {posts.map((p) => (
