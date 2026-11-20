@@ -2,9 +2,11 @@ import { useState } from "react";
 import type { Note } from "./types/note";
 import NoteForm from "./components/NoteForm";
 import NoteCard from "./components/NoteCard";
+import PostList from "./components/PostList";
+import { useLocalStorage } from "./hooks/useLocalStorage";
 
 export default function App() {
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [notes, setNotes] = useLocalStorage<Note[]>("notes", []);
   const [search, setSearch] = useState("");
 
   const addNote = (data: Omit<Note, "id">) => {
@@ -31,6 +33,8 @@ export default function App() {
       {filtered.map((n) => (
         <NoteCard key={n.id} note={n} onDelete={deleteNote} />
       ))}
+      <h2>Daftar Post</h2>
+      <PostList />
     </div>
   );
 }
